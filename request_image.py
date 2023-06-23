@@ -33,6 +33,30 @@ def download_meal_image(filename, headers):
         print(e)
         return 0
 
+    ###################################
+    # Interpretring the depth image
+    # format of the depth image:
+    #     depth_scale // float (4 bytes)
+    #     min_valid_depth // ushort (2 bytes)
+    #     max_valid_depth // ushort (2 bytes)
+    #     calculate_max_value // bool (1 byte)
+    #     width // int (4 bytes)
+    #     height // int (4 bytes)
+    #     row_stride // int (4 bytes)
+    #     data // byte[]
+    ##################################
+    # C sample code
+    # uint16_t* temp = (uint16_t*)data;
+    # for (int y = 0; y < height; y++)
+    # {
+    #    int pixel_index = y * width;
+    #    for (int x = 0; x < width; x++)
+    #    {
+    #        float dt = scale * temp[pixel_index + x];
+    #        std::cerr << x << "," << y << " - " << dt << "\n";
+    #    }
+    # }
+
 def main():
     # login (get token)
     print("logging in...")
