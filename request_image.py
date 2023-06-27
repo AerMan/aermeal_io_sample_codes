@@ -74,7 +74,7 @@ def download_depth_file(filename, headers):
             dt = depth_scale * struct.unpack("H", temp[index:index+2])
             print(f"{x}, {y} - {dt}")
 
-    return 0
+    return 1
 
 def main():
     # login (get token)
