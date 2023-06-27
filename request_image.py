@@ -1,23 +1,26 @@
 import base64
 import json
 import requests
+import struct
+
+import zipfile
 
 URL_API = "https://api.aermeal.io/site"
 
 # edit these for your own query
 # ------------
-GUEST_ID = "1001"
-TIME_FROM   = "20230401T0000"
-TIME_TO     = "20230601T2359"
-SITE_CODE = "[your site code]]"
-EMAIL = "[user email address]"
-PASSWORD = "[user password]"
+GUEST_ID    = "[guest id]"
+TIME_FROM   = "20210601T1001"
+TIME_TO     = "20230701T2000"
+SITE_CODE   = "[your site code]"
+EMAIL       = "[email]"
+PASSWORD    = "[password]"
 
 DOWNLOAD_LOCATION = "./download"
 # ------------
 
 LOGIN_CREDENTIALS = { "site_code": SITE_CODE, "email": EMAIL, "password": PASSWORD }
-LIST_PARAMS = { "site_code": SITE_CODE, "from_time" : TIME_FROM, "to_time" : TIME_TO, "guest_id": GUEST_ID }
+LIST_PARAMS = { "guest_id": GUEST_ID, "from_time" : TIME_FROM, "to_time" : TIME_TO }
 
 def request_body(dict): return json.dumps(dict)
 
@@ -33,29 +36,45 @@ def download_meal_image(filename, headers):
         print(e)
         return 0
 
-    ###################################
-    # Interpretring the depth image
-    # format of the depth image:
-    #     depth_scale // float (4 bytes)
-    #     min_valid_depth // ushort (2 bytes)
-    #     max_valid_depth // ushort (2 bytes)
-    #     calculate_max_value // bool (1 byte)
-    #     width // int (4 bytes)
-    #     height // int (4 bytes)
-    #     row_stride // int (4 bytes)
-    #     data // byte[]
-    ##################################
-    # C sample code
-    # uint16_t* temp = (uint16_t*)data;
-    # for (int y = 0; y < height; y++)
-    # {
-    #    int pixel_index = y * width;
-    #    for (int x = 0; x < width; x++)
-    #    {
-    #        float dt = scale * temp[pixel_index + x];
-    #        std::cerr << x << "," << y << " - " << dt << "\n";
-    #    }
-    # }
+def download_depth_file(filename, headers):
+    file_bytes = []
+    try:
+        print(f"Downloading file {filename}...")
+        response = requests.get(f"{URL_API}/meal/file", headers=headers, params={"filename": filename})
+        print(response.json())
+        zip_bytes = base64.b64decode(response.json()["file"])
+
+        # save the zip file first
+        with(open(f"{DOWNLOAD_LOCATION}/{filename}", "wb") as file):
+            file.write(zip_bytes)
+
+        filename_depth = filename[:-4]
+        # open the zip file and read the information
+        with(zipfile.ZipFile(f"{DOWNLOAD_LOCATION}/{filename}") as zip):
+            with(zip.open(f"{filename_depth}_rawdepth.dep", "r") as file):
+                file_bytes = bytearray(file.read())
+
+    except Exception as e:
+        print(f"Failed to download depth zip: {e}")
+        return 0
+
+    depth_scale = 1
+    min_valid_depth = 0
+    max_valid_depth = 65535
+    calculate_max_value = True
+    width = 1920
+    height = 1080
+    row_stride = 3840
+
+    temp = file_bytes
+    for y in range(height):
+        pixel_index = y * width
+        for x in range(width):
+            index = pixel_index + x
+            dt = depth_scale * struct.unpack("H", temp[index:index+2])
+            print(f"{x}, {y} - {dt}")
+
+    return 0
 
 def main():
     # login (get token)
@@ -71,6 +90,7 @@ def main():
 
     # grab the list of images
     image_list = requests.get(f"{URL_API}/meals", headers = headers, params = LIST_PARAMS)
+    print(image_list.text)
     images = image_list.json()
 
     # download each one by one
@@ -85,7 +105,7 @@ def main():
         successes += download_meal_image(image["image_icon_filename"], headers)
 
         print(f"[{index+1}/{count}] downloading depth file...", end='\r')
-        successes += download_meal_image(image["depth_filename"], headers)
+        successes += download_depth_file(image["payload_zip_filename"], headers)
 
         print(f"[{index+1}/{count}] {successes} / 3 files downloaded.     ")
 
