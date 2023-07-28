@@ -2,6 +2,7 @@ import base64
 import json
 import requests
 import struct
+import numpy, cv2
 
 import zipfile
 
@@ -58,23 +59,47 @@ def download_depth_file(filename, headers):
         print(f"Failed to download depth zip: {e}")
         return 0
 
+def convert_depth_to_png(depth_filename):
+    try:
+        # Open depth file, get file_bytes 
+        with open(f"{depth_filename}", "rb") as file:
+            file_bytes = bytearray(file.read())
+    except Exception as e:
+        print(f"Failed to open the depth file: {e}")
+        return 0
+
     depth_scale = 1
     min_valid_depth = 0
     max_valid_depth = 65535
     calculate_max_value = True
-    width = 1920
-    height = 1080
-    row_stride = 3840
+    width = 1920 
+    height = 1080 
+    row_stride = 3840*2
 
+    depth_array = numpy.zeros((height, width))
     temp = file_bytes
-    for y in range(height):
-        pixel_index = y * width
-        for x in range(width):
-            index = pixel_index + x
-            dt = depth_scale * struct.unpack("H", temp[index:index+2])
-            print(f"{x}, {y} - {dt}")
 
-    return 1
+    try:
+        for y in range(height):
+            pixel_index = width * y * 4  
+            for x in range(width):
+                index = pixel_index + x * 4
+                dt = depth_scale * struct.unpack("f", temp[index:index+4])
+                depth_array[y, x] = dt[0] 
+    except:
+        print(f'Error in processing {depth_filename}')
+        
+    nan_mask = numpy.isnan(depth_array)
+    # This cv2.normalize is crucial to get the depth heatmap
+    img_n = cv2.normalize(src=depth_array, dst=None, alpha=0, beta=255, 
+                          norm_type=cv2.NORM_MINMAX, dtype=cv2.CV_8U)
+    img_n = cv2.bitwise_not(img_n)
+    img_n[nan_mask] = 0
+
+    save_destination = depth_filename[:-4]+'_depth_heatmap.png'
+    print('Saving output at ', save_destination)
+    cv2.imwrite(save_destination, img_n)
+
 
 def main():
     # login (get token)
